@@ -57,12 +57,12 @@ var (
 		},
 		{
 			Name:   "update",
-			Cond:   notView,
+			Cond:   canUpdate,
 			Format: pkgf("%s_update.go"),
 		},
 		{
 			Name:   "delete",
-			Cond:   notView,
+			Cond:   canDelete,
 			Format: pkgf("%s_delete.go"),
 		},
 		{
@@ -239,7 +239,9 @@ var (
 )
 
 // notView reports if the given type is not a view.
-func notView(t *Type) bool { return !t.IsView() }
+func notView(t *Type) bool   { return !t.IsView() }
+func canUpdate(t *Type) bool { return notView(t) && !t.IsAuditLog() }
+func canDelete(t *Type) bool { return notView(t) && !t.IsAuditLog() }
 
 func initTemplates() {
 	templates = MustParse(NewTemplate("templates").

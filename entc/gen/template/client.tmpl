@@ -374,6 +374,7 @@ func (c *{{ $client }}) MapCreateBulk(slice any, setFunc func(*{{ $n.CreateName 
 	return &{{ $n.CreateBulkName }}{config: c.config, builders: builders}
 }
 
+{{- if not $n.IsAuditLog }}
 // Update returns an update builder for {{ $n.Name }}.
 func (c *{{ $client }}) Update() *{{ $n.UpdateName }} {
 	mutation := new{{ $n.MutationName }}(c.config, OpUpdate)
@@ -422,6 +423,7 @@ func (c *{{ $client }}) Delete() *{{ $n.DeleteName }} {
 		return &{{ $n.DeleteOneName }}{ {{ $builder }} }
 	}
 {{ end }}
+{{- end }} {{/* End of if not IsAuditLog. */}}
 {{- end }} {{/* End of if not IsView. */}}
 
 // Query returns a query builder for {{ $n.Name }}.
@@ -506,12 +508,14 @@ func (c *{{ $client }}) mutate(ctx context.Context, m *{{ $n.MutationName }}) (V
 	switch m.Op() {
 	case OpCreate:
 		return (&{{ $n.CreateName }}{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	{{- if not $n.IsAuditLog }}
 	case OpUpdate:
 		return (&{{ $n.UpdateName }}{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpUpdateOne:
 		return (&{{ $n.UpdateOneName }}{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
 	case OpDelete, OpDeleteOne:
 		return (&{{ $n.DeleteName }}{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	{{- end }}
 	default:
 		return nil, fmt.Errorf("{{ $pkg }}: unknown {{ $n.Name }} mutation op: %q", m.Op())
 	}

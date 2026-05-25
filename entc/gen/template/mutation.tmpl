@@ -26,11 +26,13 @@ type Mutation struct {
 	typ string
 	{{- range $f := $.MutationFields }}
 		{{ $f.BuilderField }} *{{ replace $f.Type.String $pkgPrefix "" }}
+		{{- if not $.IsAuditLog }}
 		{{- if $f.SupportsMutationAdd }}
 			add{{ $f.BuilderField }} *{{ replace (print $f.SignedType) $pkgPrefix "" }}
 		{{- end }}
 		{{- if $f.SupportsMutationAppend }}
 			append{{ $f.BuilderField }} {{ replace $f.Type.String $pkgPrefix "" }}
+		{{- end }}
 		{{- end }}
 	{{- end }}
 	{{- if hasTemplate (printf "dialect/%s/model/fields" $.Storage) }}
@@ -45,7 +47,9 @@ type Mutation struct {
 			{{ $e.BuilderField }} *{{ $e.Type.ID.Type }}
 		{{- else }}
 			{{ $e.BuilderField }} map[{{ $e.Type.ID.Type }}]struct{}
+			{{- if not $.IsAuditLog }}
 			removed{{ $e.BuilderField }} map[{{ $e.Type.ID.Type }}]struct{}
+			{{- end }}
 		{{- end }}
 		cleared{{ $e.BuilderField }} bool
 	{{- end }}
@@ -82,6 +86,7 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 	// {{ $func }} sets the "{{ $f.Name }}" field.
 	func (m *Mutation) {{ $func }}({{ $p }} {{ $type }}) {
 		m.{{ $f.BuilderField }} = &{{ $p }}
+		{{- if not $.IsAuditLog }}
 		{{- /* Setting numeric type override previous calls to Add. */}}
 		{{- if $f.SupportsMutationAdd }}
 			m.add{{ $f.BuilderField }} = nil
@@ -89,6 +94,7 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 		{{- /* Setting JSON type override previous calls to Append. */}}
 		{{- if $f.SupportsMutationAppend }}
 			m.append{{ $f.BuilderField }} = nil
+		{{- end }}
 		{{- end }}
 	}
 
@@ -101,6 +107,7 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 		return *v, true
 	}
 
+	{{- if not $.IsAuditLog }}
 	{{ if $f.SupportsMutationAdd }}
 		{{ $signedType := replace (print $f.SignedType) $pkgPrefix "" }}
 		// {{ $f.MutationAdd }} adds {{ $p }} to the "{{ $f.Name }}" field.
@@ -138,16 +145,19 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 			return {{ $structField }}, true
 		}
 	{{ end }}
+	{{- end }}{{/* end if not IsAuditLog (Add/Append) */}}
 
 	{{ if $f.Optional }}
 		// {{ $f.MutationClear }} clears the value of the "{{ $f.Name }}" field.
 		func (m *Mutation) {{ $f.MutationClear }}() {
 			m.{{ $f.BuilderField }} = nil
+			{{- if not $.IsAuditLog }}
 			{{- if $f.SupportsMutationAdd }}
 				m.add{{ $f.BuilderField }} = nil
 			{{- end }}
 			{{- if $f.SupportsMutationAppend }}
 				m.append{{ $f.BuilderField }} = nil
+			{{- end }}
 			{{- end }}
 			m.clearedFields[{{ $const }}] = struct{}{}
 		}
@@ -159,6 +169,7 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 		}
 	{{ end }}
 
+	{{- if not $.IsAuditLog }}
 	// {{ $f.MutationReset }} resets all changes to the "{{ $f.Name }}" field.
 	func (m *Mutation) {{ $f.MutationReset }}() {
 		m.{{ $f.BuilderField }} = nil
@@ -172,6 +183,7 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 			delete(m.clearedFields, {{ $const }})
 		{{- end }}
 	}
+	{{- end }}{{/* end if not IsAuditLog (Reset) */}}
 {{ end }}
 
 {{- if hasTemplate (printf "dialect/%s/model/fields" $.Storage) }}
@@ -237,9 +249,9 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 		}
 	{{ end }}
 
-	{{ $func := $e.MutationClear }}
-	// {{ $func }} clears the "{{ $e.Name }}" edge to the {{ $e.Type.Name }} entity.
-	func (m *Mutation) {{ $func }}() {
+	{{ $clearFunc := $e.MutationClear }}
+	// {{ $clearFunc }} clears the "{{ $e.Name }}" edge to the {{ $e.Type.Name }} entity.
+	func (m *Mutation) {{ $clearFunc }}() {
 		m.cleared{{ $e.BuilderField }} = true
 		{{- if $e.Field }}
 			{{- $const := $e.Field.Constant }}
@@ -247,12 +259,13 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 		{{- end }}
 	}
 
-	{{ $func = $e.MutationCleared }}
-	// {{ $func }} reports if the "{{ $e.Name }}" edge to the {{ $e.Type.Name }} entity was cleared.
-	func (m *Mutation) {{ $func }}() bool {
+	{{ $clearedFunc := $e.MutationCleared }}
+	// {{ $clearedFunc }} reports if the "{{ $e.Name }}" edge to the {{ $e.Type.Name }} entity was cleared.
+	func (m *Mutation) {{ $clearedFunc }}() bool {
 		return {{ with $e.Field }}{{ if .Optional }}m.{{ .MutationCleared }}() || {{ end }}{{ end }}m.cleared{{ $e.BuilderField }}
 	}
 
+	{{- if not $.IsAuditLog }}
 	{{ if not $e.Unique }}
 		{{ $p := lower (printf "%.1s" $e.Type.Name) }}
 		// {{ $e.MutationRemove }} removes the "{{ $e.Name }}" edge to the {{ $e.Type.Name }} entity by IDs.
@@ -266,15 +279,18 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 			}
 		}
 
-		{{ $func := print "Removed" $e.StructField }}
-		// {{ $func }} returns the removed IDs of the "{{ $e.Name }}" edge to the {{ $e.Type.Name }} entity.
-		func (m *Mutation) {{ $func }}IDs() (ids []{{ $e.Type.ID.Type }}) {
+		{{ $removedFunc := print "Removed" $e.StructField }}
+		// {{ $removedFunc }} returns the removed IDs of the "{{ $e.Name }}" edge to the {{ $e.Type.Name }} entity.
+		func (m *Mutation) {{ $removedFunc }}IDs() (ids []{{ $e.Type.ID.Type }}) {
 			for id := range m.removed{{ $e.BuilderField }} {
 				ids = append(ids, id)
 			}
 			return
 		}
-	{{ else if and $e.Unique $withSetGet }}
+	{{ end }}
+	{{- end }}{{/* end if not IsAuditLog (Remove) */}}
+
+	{{ if and $e.Unique $withSetGet }}
 		// {{ $e.StructField }}ID returns the "{{ $e.Name }}" edge ID in the mutation.
 		func (m *Mutation) {{ $e.StructField }}ID() (id {{ $e.Type.ID.Type }}, exists bool) {
 			if m.{{ $e.BuilderField }} != nil {
@@ -302,16 +318,17 @@ func (m *Mutation) Predicates() []predicate.{{ $.Name }} {
 		return
 	}
 
-
-	{{ $func = $e.MutationReset }}
-	// {{ $func }} resets all changes to the "{{ $e.Name }}" edge.
-	func (m *Mutation) {{ $func }}() {
+	{{- if not $.IsAuditLog }}
+	{{ $resetFunc := $e.MutationReset }}
+	// {{ $resetFunc }} resets all changes to the "{{ $e.Name }}" edge.
+	func (m *Mutation) {{ $resetFunc }}() {
 		m.{{ $e.BuilderField }} = nil
 		m.cleared{{ $e.BuilderField }} = false
 		{{- if not $e.Unique }}
 			m.removed{{ $e.BuilderField }} = nil
 		{{- end }}
 	}
+	{{- end }}
 {{ end }}
 
 
@@ -412,7 +429,9 @@ func (m *Mutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *Mutation) AddedFields() []string {
-	{{- if $.HasNumeric }}
+	{{- if $.IsAuditLog }}
+		return nil
+	{{- else if $.HasNumeric }}
 		var fields []string
 		{{- range $f := $.Fields }}
 			{{- if $f.SupportsMutationAdd }}
@@ -431,6 +450,7 @@ func (m *Mutation) AddedFields() []string {
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *Mutation) AddedField(name string) (ent.Value, bool) {
+	{{- if not $.IsAuditLog }}
 	{{- if $.HasNumeric }}
 		switch name {
 		{{- range $f := $.Fields }}
@@ -441,6 +461,7 @@ func (m *Mutation) AddedField(name string) (ent.Value, bool) {
 		{{- end }}
 		}
 	{{- end }}
+	{{- end }}
 	return nil, false
 }
 
@@ -448,6 +469,7 @@ func (m *Mutation) AddedField(name string) (ent.Value, bool) {
 // the field is not defined in the schema, or if the type mismatched the field
 // type.
 func (m *Mutation) AddField(name string, value ent.Value) error {
+	{{- if not $.IsAuditLog }}
 	{{- with $.Fields }}
 		switch name {
 		{{- range $f := $.Fields }}
@@ -463,6 +485,7 @@ func (m *Mutation) AddField(name string, value ent.Value) error {
 			{{- end }}
 		{{- end }}
 		}
+	{{- end }}
 	{{- end }}
 	return fmt.Errorf("unknown {{ $.Name }} numeric field %s", name)
 }
@@ -519,7 +542,14 @@ func (m *Mutation) ResetField(name string) error {
 		{{- range $f := $.Fields }}
 			{{- if and $f.IsBlobLazy (not $blobSupported) }}{{ continue }}{{ end }}
 			case {{ $f.Constant }}:
+				{{- if $.IsAuditLog }}
+				m.{{ $f.BuilderField }} = nil
+				{{- if $f.Optional }}
+				delete(m.clearedFields, {{ $f.Constant }})
+				{{- end }}
+				{{- else }}
 				m.{{ $f.MutationReset }}()
+				{{- end }}
 				return nil
 		{{- end }}
 		}
@@ -564,20 +594,25 @@ func (m *Mutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *Mutation) RemovedEdges() []string {
-	edges := make([]string, 0, {{ len $.EdgesWithID }})
-	{{- range $e := $.EdgesWithID }}
-		{{- if not $e.Unique }}
-			if m.removed{{ $e.BuilderField }} != nil {
-				edges = append(edges, {{ $e.Constant }})
-			}
+	{{- if $.IsAuditLog }}
+		return nil
+	{{- else }}
+		edges := make([]string, 0, {{ len $.EdgesWithID }})
+		{{- range $e := $.EdgesWithID }}
+			{{- if not $e.Unique }}
+				if m.removed{{ $e.BuilderField }} != nil {
+					edges = append(edges, {{ $e.Constant }})
+				}
+			{{- end }}
 		{{- end }}
+		return edges
 	{{- end }}
-	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
 func (m *Mutation) RemovedIDs(name string) []ent.Value {
+	{{- if not $.IsAuditLog }}
 	{{- $edges := list }}{{ range $e := $.EdgesWithID }}{{ if not $e.Unique }}{{ $edges = append $edges $e }}{{ end }}{{ end }}
 	{{- with $edges }}
 		switch name {
@@ -590,6 +625,7 @@ func (m *Mutation) RemovedIDs(name string) []ent.Value {
 				return ids
 		{{- end }}
 		}
+	{{- end }}
 	{{- end }}
 	return nil
 }
@@ -643,7 +679,12 @@ func (m *Mutation) ResetEdge(name string) error {
 		switch name {
 		{{- range $e := $.EdgesWithID }}
 			case {{ $e.Constant }}:
+				{{- if $.IsAuditLog }}
+				m.{{ $e.BuilderField }} = nil
+				m.cleared{{ $e.BuilderField }} = false
+				{{- else }}
 				m.{{ $e.MutationReset }}()
+				{{- end }}
 				return nil
 		{{- end }}
 		}

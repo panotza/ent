@@ -41,3 +41,34 @@ func Comment(text string) *CommentAnnotation {
 }
 
 var _ Annotation = (*CommentAnnotation)(nil)
+
+// SchemaAnnotation is a builtin schema annotation for configuring
+// schema-level code generation behavior.
+type SchemaAnnotation struct {
+	AuditLog bool `json:"audit_log,omitempty"`
+}
+
+// Name implements the Annotation interface.
+func (SchemaAnnotation) Name() string {
+	return "Schema"
+}
+
+// Merge implements the Merger interface.
+func (a SchemaAnnotation) Merge(other Annotation) Annotation {
+	if o, ok := other.(SchemaAnnotation); ok {
+		return SchemaAnnotation{
+			AuditLog: a.AuditLog || o.AuditLog,
+		}
+	}
+	return a
+}
+
+// AuditLog is a builtin schema annotation that marks a schema as
+// insert-only. Types with this annotation generate only Create
+// builders — no Update, Delete, Query, or Where code is produced.
+var AuditLog = SchemaAnnotation{AuditLog: true}
+
+var (
+	_ Annotation = SchemaAnnotation{}
+	_ Merger     = SchemaAnnotation{}
+)

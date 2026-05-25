@@ -287,6 +287,12 @@ func (t Type) IsView() bool {
 	return t.schema != nil && t.schema.View
 }
 
+// IsAuditLog indicates if the type (schema) is an audit-log / insert-only type.
+func (t Type) IsAuditLog() bool {
+	a := schemaAnnotate(t.Annotations)
+	return a != nil && a.AuditLog
+}
+
 // IsEdgeSchema indicates if the type (schema) is used as an edge-schema.
 // i.e. is being used by an edge (or its inverse) with edge.Through modifier.
 func (t Type) IsEdgeSchema() bool {
@@ -2405,6 +2411,18 @@ func fieldAnnotate(annotation map[string]any) *field.Annotation {
 	}
 	if buf, err := json.Marshal(annotation[annotate.Name()]); err == nil {
 		_ = json.Unmarshal(buf, &annotate)
+	}
+	return annotate
+}
+
+// schemaAnnotate extracts the entschema.SchemaAnnotation from a loaded annotation format.
+func schemaAnnotate(annotation map[string]any) *entschema.SchemaAnnotation {
+	annotate := &entschema.SchemaAnnotation{}
+	if annotation == nil || annotation[annotate.Name()] == nil {
+		return nil
+	}
+	if buf, err := json.Marshal(annotation[annotate.Name()]); err == nil {
+		_ = json.Unmarshal(buf, annotate)
 	}
 	return annotate
 }
